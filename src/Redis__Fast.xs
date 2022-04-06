@@ -1427,7 +1427,7 @@ CODE:
 
 
 void
-__info(Redis::Fast self, ...)
+__info_cmd(Redis::Fast self, ...)
 PREINIT:
     redis_fast_reply_t ret;
     SV* cb;
@@ -1447,18 +1447,19 @@ CODE:
 
     cb = ST(items - 1);
     if (SvROK(cb) && SvTYPE(SvRV(cb)) == SVt_PVCV) {
-        argc = items - 1;
+        argc = items - 2;
     } else {
         cb = NULL;
-        argc = items;
+        argc = items - 1;
     }
     Newx(argv, sizeof(char*) * argc, char*);
     Newx(argvlen, sizeof(size_t) * argc, size_t);
 
-    argv[0] = "INFO";
-    argvlen[0] = 4;
-    for (i = 1; i < argc; i++) {
-        argv[i] = SvPV(ST(i), len);
+    for (i = 0; i < argc; i++) {
+        if(!sv_utf8_downgrade(ST(i + 1), 1)) {
+            croak("command sent is not an octet sequence in the native encoding (Latin-1). Consider using debug mode to see the command itself.");
+        }
+        argv[i] = SvPV(ST(i + 1), len);
         argvlen[i] = len;
     }
 

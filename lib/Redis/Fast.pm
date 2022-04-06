@@ -307,7 +307,16 @@ sub ping {
 sub info {
     my $self = shift;
     $self->__is_valid_command('info');
-    my ($ret, $error) = $self->__info(@_);
+    my ($ret, $error) = $self->__info_cmd('INFO', @_);
+    confess "[info] $error, " if defined $error;
+    return $ret unless ref $ret eq 'ARRAY';
+    return @$ret;
+}
+
+sub cluster_info {
+    my $self = shift;
+    $self->__is_valid_command('cluster_info');
+    my ($ret, $error) = $self->__info_cmd('CLUSTER', 'INFO', @_);
     confess "[info] $error, " if defined $error;
     return $ret unless ref $ret eq 'ARRAY';
     return @$ret;

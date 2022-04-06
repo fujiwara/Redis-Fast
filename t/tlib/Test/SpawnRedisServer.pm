@@ -11,7 +11,7 @@ use base qw( Exporter );
 
 use Net::EmptyPort qw(empty_port);
 
-our @EXPORT    = qw( redis sentinel );
+our @EXPORT    = qw( redis sentinel redis_cluster );
 our @EXPORT_OK = qw( redis reap );
 
 sub redis {
@@ -146,6 +146,78 @@ sub sentinel {
 
   return ($c, $addr, $ver, split(/[.]/, $ver), $local_port);
 }
+
+sub redis_cluster {
+  my %params = (
+    timeout => 120,
+    @_,
+  );
+
+  my ($fh, $fn) = File::Temp::tempfile();
+
+  my $port = empty_port();
+
+  my $local_port = $port;
+  $params{port}
+    and $local_port = $params{port};
+
+  my $addr = "127.0.0.1:$local_port";
+
+  unlink("redis-server-$addr.log");
+  unlink('dump.rdb');
+  unlink('nodes.conf');
+
+  $fh->print("
+    timeout $params{timeout}
+    appendonly no
+    daemonize no
+    port $local_port
+    bind 127.0.0.1
+    loglevel debug
+    logfile redis-server-$addr.log
+    cluster-enabled yes
+    cluster-config-file nodes.conf
+    cluster-node-timeout 5000
+  ");
+  $fh->print("maxclients $params{maxclients}\n") if $params{maxclients};
+  $fh->print("requirepass $params{password}\n") if $params{password};
+  $fh->flush;
+
+  Test::More::diag("Spawn Redis at $addr, cfg $fn") if $ENV{REDIS_DEBUG};
+
+  my $redis_server_path = $ENV{REDIS_SERVER_PATH} || 'redis-server';
+  if (!can_run($redis_server_path)) {
+    Test::More::plan skip_all => "Could not find binary redis-server";
+    return;
+  }
+
+  my ($ver, $c);
+  eval { ($ver, $c) = spawn_server($redis_server_path, $fn, $addr, $params{password}) };
+  if (my $e = $@) {
+    reap();
+    Test::More::plan skip_all => "Could not start redis-server: $@";
+    return;
+  }
+
+  if (my $rvs = $params{requires_version}) {
+    if (!defined $ver) {
+      $c->();
+      Test::More::plan skip_all => "This tests require at least redis-server $rvs, could not determine server version";
+      return;
+    }
+
+    my ($v1, $v2, $v3) = split(/[.]/, $ver);
+    my ($r1, $r2, $r3) = split(/[.]/, $rvs);
+    if ($v1 < $r1 or $v1 == $r1 and $v2 < $r2 or $v1 == $r1 and $v2 == $r2 and $v3 < $r3) {
+      $c->();
+      Test::More::plan skip_all => "This tests require at least redis-server $rvs, server found is $ver";
+      return;
+    }
+  }
+
+  return ($c, $addr, $ver, split(/[.]/, $ver), $local_port);
+}
+
 
 sub spawn_server {
   my $password = pop;
